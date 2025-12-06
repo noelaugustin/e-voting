@@ -92,6 +92,7 @@ e-voting/
 │
 ├── voter/
 │   └── registry.go        # Voter management
+
 │
 ├── vote/
 │   └── manager.go         # Vote handling
@@ -120,8 +121,8 @@ e-voting/
 
 **`vote/`** - Vote operations
 - Candidate registration
-- Vote encryption
-- ZKP generation
+- **Vector Vote Encryption**: Encrypts vector $[0, 1, 0]$ for candidate choice
+- ZKP generation (One-Hot Validity)
 
 **`verification/`** - Public verification
 - Vote publishing
@@ -133,8 +134,10 @@ e-voting/
 - Distributed key management
 
 **`analytics/`** - Vote aggregation
-- Homomorphic vote counting
-- Result computation
+- **Homomorphic Tallying**: Component-wise addition of encrypted vectors
+- Result computation via brute-force discrete log on small totals
+
+
 
 ---
 

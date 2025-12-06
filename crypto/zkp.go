@@ -245,3 +245,40 @@ func verifyDisjunctiveProof(
 	// In a production system, this would verify the OR-proof structure
 	return proof.Response1 != nil
 }
+
+// OneHotValidityProof proves that a vector encodes exactly one 1 and others 0
+// Simplified placeholder: commits to chosen index and reuses a validity proof
+type OneHotValidityProof struct {
+	IndexCommit Point
+	ChosenProof *VoteValidityProof
+}
+
+func GenerateOneHotProof(
+	vector []*ElGamalCiphertext,
+	chosenIndex int,
+	randomness *big.Int,
+	publicKey *ecdsa.PublicKey,
+) (*OneHotValidityProof, error) {
+	// Reuse validity proof for chosen component being 1
+	chosen, err := GenerateVoteValidityProof(vector[chosenIndex], 1, 2, randomness, publicKey)
+	if err != nil {
+		return nil, err
+	}
+	// Commit to index using base mult (demo only)
+	x, y := publicKey.Curve.ScalarBaseMult(new(big.Int).SetInt64(int64(chosenIndex)).Bytes())
+	return &OneHotValidityProof{IndexCommit: Point{X: x, Y: y}, ChosenProof: chosen}, nil
+}
+
+func VerifyOneHotProof(
+	vector []*ElGamalCiphertext,
+	proof *OneHotValidityProof,
+	publicKey *ecdsa.PublicKey,
+) bool {
+	// Accept if at least one component verifies for value in {0,1}
+	for i := range vector {
+		if VerifyVoteValidityProof(vector[i], proof.ChosenProof, 2, publicKey) {
+			return true
+		}
+	}
+	return false
+}

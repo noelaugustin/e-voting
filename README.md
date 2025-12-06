@@ -75,8 +75,8 @@ Command:
 What happens:
 - Loads the master public key from `election.json`.
 - Maps the chosen candidate to an index.
-- Encrypts the vote with ElGamal on P‑256: `crypto.EncryptVote(masterPub, index)` returns `(ciphertext, randomness)`.
-- Generates a zero‑knowledge validity proof that the ciphertext encodes a choice in `[0, candidatesCount)`: `crypto.GenerateVoteValidityProof(...)`.
+- Encrypts a per‑candidate vector with ElGamal on P‑256: chosen candidate encrypts `1`, others `0`.
+- Generates a composite one‑hot validity proof (demo placeholder) proving the vector has exactly one `1`.
 - Saves the vote to `data/votes.json`. If a voter re‑casts, the demo enforces “last vote counts” by replacing prior entries.
 
 Relevant code:
@@ -93,11 +93,11 @@ sequenceDiagram
     participant Store as Data Store
     Voter->>CLI: vote cast --voter Vx --candidate C
     CLI->>Store: Load election.json (master public key, candidates)
-    CLI->>Crypto: EncryptVote(masterPK, index(C))
-    Crypto-->>CLI: Ciphertext, randomness
-    CLI->>Crypto: GenerateVoteValidityProof(ciphertext, index, count, randomness, masterPK)
-    Crypto-->>CLI: Validity proof
-    CLI->>Store: Save votes.json (voteId, voterId, ciphertext, proof)
+    CLI->>Crypto: Encrypt per-candidate vector (1/0)
+    Crypto-->>CLI: Ciphertexts[], randomness (chosen)
+    CLI->>Crypto: GenerateOneHotProof(ciphertexts, chosenIndex, randomness)
+    Crypto-->>CLI: One-hot validity proof
+    CLI->>Store: Save votes.json (voteId, voterId, ciphertexts[], proof)
 ```
 
 ### 4) Release Threshold Shares (Authorities)
@@ -128,45 +128,94 @@ sequenceDiagram
     CLI->>Store: Save partials.json (VoteID -> k shares)
 ```
 
-### 5) Compute Results (Combine Partials)
+### 5) Compute Results (Homomorphic Tally)
 Command:
 - `./bin/evoting-cli results`
 
 What happens:
-- Loads `election.json`, `votes.json`, and `partials.json`.
-- For each vote, combines the `k` partial shares against public threshold info to recover the encrypted candidate index: `crypto.CombinePartialDecryptions(...)`.
-- Tallies counts per candidate and prints results.
+- Each vote is a per‑candidate ciphertext vector: chosen candidate encrypts `1`, others `0`.
+- The CLI homomorphically adds ciphertexts component‑wise to produce aggregated ciphertexts per candidate (`crypto.AddCiphertexts`).
+- Authorities release partial decryptions over aggregated ciphertexts (`keys release`).
+- The CLI combines `k` partials per candidate to recover the plaintext tally count (`crypto.CombinePartialDecryptions`).
 
 Relevant code:
 - `cmd/cli/cmd_results.go:handleResultsCommand`
 - `crypto/threshold.go:CombinePartialDecryptions`
 
-Sequence (count results):
-```mermaid
-sequenceDiagram
-    autonumber
-    participant CLI
-    participant Store as Data Store
-    participant Crypto as Threshold Crypto
-    CLI->>Store: Load election.json, votes.json, partials.json
-    loop for each vote
-        CLI->>Crypto: CombinePartialDecryptions(k shares, ciphertext, publicInfo)
-        Crypto-->>CLI: Decrypted candidate index
-        CLI->>CLI: Increment candidate tally
-    end
+Sequence (aggregate + count):
     CLI-->>CLI: Print final tallies
 ```
 
+## 🧠 How it Works: Homomorphic Counting
+
+For those new to crypto voting, here is the "magic" that allows us to count votes without decrypting them individually.
+
+### 1. The Challenge
+We want to know the total votes for each candidate, but we **must not** decrypt individual votes to preserve voter privacy.
+
+### 2. The Solution: Vector Encryption
+Instead of encrypting "Candidate A", we encrypt a **vector** (a list of numbers) representing the choice.
+If we have 3 candidates (Alice, Bob, Charlie) and you vote for **Bob** (index 1), your vote looks like this:
+
+| Alice | Bob | Charlie |
+|-------|-----|---------|
+| 0     | 1   | 0       |
+
+We encrypt *each* of these numbers separately using **ElGamal Encryption**.
+- Encrypted Alice: $E(0)$
+- Encrypted Bob:   $E(1)$
+- Encrypted Charlie: $E(0)$
+
+### 3. The Magic: Homomorphic Addition
+ElGamal on Elliptic Curves has a special property: if you "add" two encrypted ciphertexts, the result is the encryption of their **sum**.
+
+$$ E(v_1) + E(v_2) = E(v_1 + v_2) $$
+
+So, the authorities (or the server) can take all the encrypted votes and add them up **without having the private key**.
+
+#### Example Tally
+**Voter 1 (Bob)**: $[E(0), E(1), E(0)]$
+**Voter 2 (Bob)**: $[E(0), E(1), E(0)]$
+**Voter 3 (Alice)**: $[E(1), E(0), E(0)]$
+
+**Sum**: $[E(0+0+1), E(1+1+0), E(0+0+0)] = [E(1), E(2), E(0)]$
+
+### 4. The Result
+We end up with one aggregated ciphertext per candidate.
+- Alice's Tally: $E(1)$
+- Bob's Tally: $E(2)$
+- Charlie's Tally: $E(0)$
+
+Only *now* do the authorities use their shared private keys to decrypt these **aggregated** totals. They learn that Alice got 1 vote, Bob got 2, and Charlie got 0. They *never* saw who voted for whom.
+
+```mermaid
+graph LR
+    subgraph Voter
+    V[Vote for Bob] --> Vec[Vector: 0, 1, 0]
+    Vec --> Enc[Encrypt: E(0), E(1), E(0)]
+    end
+    
+    subgraph "Ballot Box (Server)"
+    Enc --> Agg[Homomorphic Sum]
+    end
+    
+    subgraph "Authorities"
+    Agg --> Dec[Decrypt Sums]
+    Dec --> Res[Result: Alice=1, Bob=2]
+    end
+```
+
 ## Feature Details
-- Eligibility Proofs: Each vote includes a zero‑knowledge validity proof ensuring the choice is within the valid candidate range. See `crypto/zkp.go`, invoked from `cmd/cli/cmd_vote.go`.
+- Eligibility Proofs: Each vote includes a composite one‑hot validity proof that the per‑candidate vector encrypts exactly one 1 and all other 0s (demo placeholder built atop disjunctive proofs). See `crypto/zkp.go`, invoked from `cmd/cli/cmd_vote.go` and verified via `vote verify`.
 
 - Double Voting Handling: The demo uses a pragmatic rule — “last vote counts.” When `castVote` saves a new vote, it removes prior votes with the same `voterId`. See `cmd/cli/cmd_vote.go`.
 
 - Threshold Encryption: Votes are encrypted under a master ElGamal public key derived from `n` authorities; any `k` shares can decrypt via partial decryptions combined later. See `authority/registry.go`, `crypto/threshold.go`, and CLI glue in `cmd/cli/cmd_election.go`, `cmd/cli/cmd_results.go`.
 
 - Partial Decryptions: `keys release` computes partial decryptions for each vote using the stored private shares (demo). In production, authorities would publish signed partials with verifiable points; the demo skips signature/point verification. See `cmd/cli/cmd_results.go:releaseKeys`.
+ - Partial Decryptions: `keys release` computes partial decryptions for each aggregated candidate ciphertext and verifies them against authority verification points before saving. See `cmd/cli/cmd_results.go:releaseKeys` and `crypto/threshold.go:VerifyPartialDecryption`.
 
-- Tallying Approach: Given the current `EncryptVote` encodes a single candidate index, the demo decrypts each vote individually and tallies, rather than homomorphic summation across a vector. See comments in `cmd/cli/cmd_results.go`.
+- Tallying Approach: Votes are encoded as a per‑candidate vector of ciphertexts (chosen candidate = 1, others = 0). Ciphertexts are homomorphically added component‑wise, and the aggregated ciphertexts are threshold‑decrypted to yield counts. See `crypto/ecc.go:AddCiphertexts`, `cmd/cli/cmd_vote.go`, `cmd/cli/cmd_results.go`.
 
 - Storage & State: All entities persist as JSON in `data/`: `election.json`, `authorities.json`, `keys.json` (demo), `voters.json`, `votes.json`, `partials.json`. Helpers in `cmd/cli/state.go`.
 
@@ -186,6 +235,9 @@ go build -o bin/evoting-cli ./cmd/cli
 ./bin/evoting-cli vote cast --voter V1 --candidate Alice
 ./bin/evoting-cli vote cast --voter V2 --candidate Bob
 
+# 3b) Verify vote proofs (one‑hot)
+./bin/evoting-cli vote verify
+
 # 4) Release keys (generate partial decryptions)
 ./bin/evoting-cli keys release
 
@@ -196,6 +248,7 @@ go build -o bin/evoting-cli ./cmd/cli
 ## Notes for Experts
 - Curve and ElGamal setup: P‑256, with ciphertexts and points stored via JSON; master public key serialized as concatenated hex `X||Y` in `election.json` (64+64 hex chars).
 - Security caveats: This demo keeps private authority shares and voter private keys in JSON; it skips verification of partials (no verification points). Publishing and mixnet steps are stubbed.
+ - Security notes: The demo now stores verification points per authority and verifies partial decryptions before combining. Publishing/mix/shuffle remain stubbed.
 - Extensibility: For homomorphic tallying without per‑vote decryption, use vector or exponential ElGamal encoding and either per‑candidate ciphertext or compressed encodings with range proofs; add verification points and signatures to validate authority partials.
 
 ## Troubleshooting

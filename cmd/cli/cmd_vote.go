@@ -97,14 +97,29 @@ func castVote(args []string) {
 		}
 	}
 
-	ciphertext, randomness, err := crypto.EncryptVote(masterKey, candidateIndex)
-	if err != nil {
-		fmt.Printf("Error encrypting vote: %v\n", err)
-		os.Exit(1)
+	// Encrypt vector: per-candidate ciphertexts (1 for chosen, 0 otherwise)
+	var ciphertexts []*crypto.ElGamalCiphertext
+	var randomness *big.Int // use randomness of chosen for proof linkage
+	for i := 0; i < len(election.Candidates); i++ {
+		ct, r, err := crypto.EncryptVote(masterKey, func() int {
+			if i == candidateIndex {
+				return 1
+			} else {
+				return 0
+			}
+		}())
+		if err != nil {
+			fmt.Printf("Error encrypting component %d: %v\n", i, err)
+			os.Exit(1)
+		}
+		ciphertexts = append(ciphertexts, ct)
+		if i == candidateIndex {
+			randomness = r
+		}
 	}
 
-	// Generate Validity Proof
-	proof, err := crypto.GenerateVoteValidityProof(ciphertext, candidateIndex, len(election.Candidates), randomness, masterKey)
+	// Generate composite one-hot proof over the vector (demo placeholder)
+	proof, err := crypto.GenerateOneHotProof(ciphertexts, candidateIndex, randomness, masterKey)
 	if err != nil {
 		fmt.Printf("Error generating proof: %v\n", err)
 		os.Exit(1)
@@ -126,11 +141,11 @@ func castVote(args []string) {
 
 	// Create new vote
 	vote := VoteData{
-		VoteID:     fmt.Sprintf("vote-%s-%d", *voterID, len(votes)+1),
-		VoterID:    *voterID,
-		Ciphertext: ciphertext,
-		Proof:      proof,
-		Timestamp:  "2024-12-06T12:00:00Z", // Dummy timestamp
+		VoteID:      fmt.Sprintf("vote-%s-%d", *voterID, len(votes)+1),
+		VoterID:     *voterID,
+		Ciphertexts: ciphertexts,
+		Proof:       proof,
+		Timestamp:   "2024-12-06T12:00:00Z", // Dummy timestamp
 	}
 
 	newVotes = append(newVotes, vote)
@@ -146,5 +161,31 @@ func publishVotes() {
 }
 
 func verifyVote(args []string) {
-	fmt.Println("Verifying vote... (Simulation)")
+	// Verify one-hot proofs for all votes
+	var election ElectionData
+	if err := loadJSON(ElectionFile, &election); err != nil {
+		fmt.Printf("Error loading election: %v\n", err)
+		os.Exit(1)
+	}
+	var votes []VoteData
+	if err := loadJSON(VotesFile, &votes); err != nil {
+		fmt.Printf("Error loading votes: %v\n", err)
+		os.Exit(1)
+	}
+	// Reconstruct Master Public Key
+	xStr := election.MasterPublicKey[:64]
+	yStr := election.MasterPublicKey[64:]
+	x := new(big.Int)
+	x.SetString(xStr, 16)
+	y := new(big.Int)
+	y.SetString(yStr, 16)
+	masterKey := &ecdsa.PublicKey{Curve: elliptic.P256(), X: x, Y: y}
+
+	validCount := 0
+	for _, v := range votes {
+		if v.Proof != nil && crypto.VerifyOneHotProof(v.Ciphertexts, v.Proof, masterKey) {
+			validCount++
+		}
+	}
+	fmt.Printf("Verified %d/%d vote proofs (one-hot).\n", validCount, len(votes))
 }

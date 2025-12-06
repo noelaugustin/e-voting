@@ -84,9 +84,10 @@ type ElectionData struct {
 }
 
 type AuthorityData struct {
-	ID        int    `json:"id"`
-	PublicKey string `json:"publicKey"`
-	// Verification points would go here
+	ID                 int    `json:"id"`
+	PublicKey          string `json:"publicKey"`
+	VerificationPointX string `json:"verificationPointX"`
+	VerificationPointY string `json:"verificationPointY"`
 }
 
 type AuthorityKeyData struct {
@@ -103,9 +104,9 @@ type VoterData struct {
 }
 
 type VoteData struct {
-	VoteID     string                    `json:"voteId"`
-	VoterID    string                    `json:"voterId"`
-	Ciphertext *crypto.ElGamalCiphertext `json:"ciphertext"`
-	Proof      *crypto.VoteValidityProof `json:"proof"`
-	Timestamp  string                    `json:"timestamp"`
+	VoteID      string                      `json:"voteId"`
+	VoterID     string                      `json:"voterId"`
+	Ciphertexts []*crypto.ElGamalCiphertext `json:"ciphertexts"` // per-candidate vector
+	Proof       *crypto.OneHotValidityProof `json:"proof"`
+	Timestamp   string                      `json:"timestamp"`
 }

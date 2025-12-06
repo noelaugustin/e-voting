@@ -6,8 +6,18 @@ import (
 	"os"
 	"strings"
 
+	"crypto/elliptic"
+	"math/big"
+
 	"github.com/naugustin/e-voting/authority"
 )
+
+// cryptoPointBaseMult computes G*scalar on P-256
+func cryptoPointBaseMult(scalar *big.Int) (*big.Int, *big.Int) {
+	curve := elliptic.P256()
+	x, y := curve.ScalarBaseMult(scalar.Bytes())
+	return x, y
+}
 
 func handleElectionCommand(args []string) {
 	if len(args) < 1 {
@@ -76,9 +86,14 @@ func createElection(args []string) {
 			masterPubKey = pubKeyStr
 		}
 
+		// Verification point = share * G
+		vpX, vpY := cryptoPointBaseMult(auth.KeyShare.ShareValue)
+
 		updatedAuths = append(updatedAuths, AuthorityData{
-			ID:        auth.KeyShare.Index,
-			PublicKey: pubKeyStr,
+			ID:                 auth.KeyShare.Index,
+			PublicKey:          pubKeyStr,
+			VerificationPointX: fmt.Sprintf("%064x", vpX),
+			VerificationPointY: fmt.Sprintf("%064x", vpY),
 		})
 
 		// Serialize private key share
