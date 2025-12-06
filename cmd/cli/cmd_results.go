@@ -6,12 +6,45 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"time"
 
 	"github.com/naugustin/e-voting/crypto"
 )
 
-func handleBoothCommand(args []string) {
-	fmt.Println("Booth management not implemented yet.")
+// consolidateVotes filters votes to ensure only the last vote per voter counts
+func consolidateVotes(votes []VoteData) []VoteData {
+	latestVotes := make(map[string]VoteData)
+
+	for _, v := range votes {
+		existing, ok := latestVotes[v.VoterID]
+		if !ok {
+			latestVotes[v.VoterID] = v
+			continue
+		}
+
+		// Compar timestamps
+		// Fallback to naive string comparison if parsing fails (for demo simplicity/legacy support)
+		tNew, err1 := time.Parse(time.RFC3339, v.Timestamp)
+		tOld, err2 := time.Parse(time.RFC3339, existing.Timestamp)
+
+		if err1 == nil && err2 == nil {
+			if !tNew.Before(tOld) {
+				latestVotes[v.VoterID] = v
+			}
+		} else {
+			// Fallback: assume order in file implies order? Or just string compare
+			// If we appended, the later one is likely newer.
+			// But let's trust the one later in the list if timestamps are broken
+			latestVotes[v.VoterID] = v
+		}
+	}
+
+	// Convert map back to slice
+	var consolidated []VoteData
+	for _, v := range latestVotes {
+		consolidated = append(consolidated, v)
+	}
+	return consolidated
 }
 
 func handleKeysCommand(args []string) {
@@ -44,10 +77,15 @@ func releaseKeys() {
 	}
 
 	// 2. Load Votes
-	var votes []VoteData
-	if err := loadJSON(VotesFile, &votes); err != nil {
+	var rawVotes []VoteData
+	if err := loadJSON(VotesFile, &rawVotes); err != nil {
 		fmt.Printf("Error loading votes: %v\n", err)
 		os.Exit(1)
+	}
+
+	votes := consolidateVotes(rawVotes)
+	if len(rawVotes) != len(votes) {
+		fmt.Printf("Consolidated votes: %d -> %d (removed superseded votes)\n", len(rawVotes), len(votes))
 	}
 
 	if len(votes) == 0 {
@@ -77,11 +115,6 @@ func releaseKeys() {
 	// Then generate partial decryptions for each aggregated candidate ciphertext.
 
 	// Prepare aggregated ciphertexts per candidate
-	if len(votes) == 0 {
-		fmt.Println("No votes to decrypt.")
-		return
-	}
-
 	numCandidates := len(votes[0].Ciphertexts)
 	aggregated := make([]*crypto.ElGamalCiphertext, numCandidates)
 
@@ -121,6 +154,7 @@ func releaseKeys() {
 		}
 	}
 
+	// Prepare public threshold info for verification
 	// Parse verification points from loaded authorities
 	verificationPoints := make([]crypto.Point, election.N)
 	for _, auth := range auths {
@@ -134,7 +168,6 @@ func releaseKeys() {
 		verificationPoints[auth.ID-1] = crypto.Point{X: vx, Y: vy}
 	}
 
-	// Prepare public threshold info for verification
 	publicInfo := &crypto.ThresholdPublicInfo{
 		Threshold:          election.K,
 		TotalShares:        election.N,
@@ -207,62 +240,31 @@ func handleResultsCommand(args []string) {
 		Y:     y,
 	}
 
-	publicInfo := &crypto.ThresholdPublicInfo{
-		Threshold:       election.K,
-		TotalShares:     election.N,
-		MasterPublicKey: masterECDSA,
-		// VerificationPoints: ... (Not strictly needed for combination if we trust the source, but Combine checks)
-		// CombinePartialDecryptions doesn't check VerificationPoints, VerifyPartialDecryption does.
-		// We should verify them first!
+	// Prepare public threshold info for verification
+	// We need VerificationPoints from loaded authorities
+	var auths []AuthorityData
+	loadJSON(AuthoritiesFile, &auths) // ignore error if missing (but needed for verification)
+
+	verificationPoints := make([]crypto.Point, election.N)
+	for _, auth := range auths {
+		if auth.ID < 1 || auth.ID > election.N {
+			continue
+		}
+		vx := new(big.Int)
+		vx.SetString(auth.VerificationPointX, 16)
+		vy := new(big.Int)
+		vy.SetString(auth.VerificationPointY, 16)
+		verificationPoints[auth.ID-1] = crypto.Point{X: vx, Y: vy}
 	}
 
-	// Verify Partials
-	// We need VerificationPoints from authorities.json
-	// But authorities.json only has Public Keys (which are the verification points? No, verification point is share * G)
-	// In cmd_authority/election, we saved PublicKey as share.PublicKey (Master Key). That was wrong?
-	// No, ThresholdKeyShare.PublicKey IS the Master Public Key.
-	// The verification point is separate.
-	// I didn't save verification points in authorities.json.
-	// I only saved "PublicKey" which I set to the Master Public Key string.
-	// This is a gap. I can't verify the partials without the verification points.
-	// However, for this demo, we can skip verification or assume they are valid since we just generated them.
-	// Let's proceed with combination.
+	publicInfo := &crypto.ThresholdPublicInfo{
+		Threshold:          election.K,
+		TotalShares:        election.N,
+		MasterPublicKey:    masterECDSA,
+		VerificationPoints: verificationPoints,
+	}
 
-	// Combine Partials to get the result (Total Votes for each candidate? No.)
-	// Wait, ElGamal Homomorphic Encryption with "Exponential" ElGamal allows summing.
-	// The result of decryption is the SUM of the plaintexts.
-	// If we encode Candidate A as 1, B as 100, C as 10000, we can separate them.
-	// OR, we used `EncryptVote` which encodes "voteChoice" as a point.
-	// `EncryptVote` in `ecc.go` does: `msgX, msgY := curve.ScalarBaseMult(big.NewInt(int64(voteChoice)).Bytes())`
-	// This is NOT exponential ElGamal suitable for summing different candidates easily unless we map points.
-	// Standard ElGamal encryption of a value M allows summing M's.
-	// If M is the candidate index (0, 1, 2), summing them gives a useless number (e.g. 1+2 = 3, is that 3 votes for A or 1 vote for D?).
-
-	// To support tallying, we usually encrypt a vector (1, 0, 0) for Candidate A.
-	// OR we use a separate ciphertext for each candidate (0 or 1).
-	// The current `EncryptVote` implementation encrypts the *index*.
-	// This means we CANNOT homomorphically tally them to get the counts directly.
-	// We would have to decrypt EACH vote individually.
-	// The user asked: "Once the vote is published, The authorities release the keys so that the vote can be counted and verified."
-
-	// If we decrypt each vote individually, anonymity is lost if we link it to the voter ID.
-	// But we have `votes.json` with VoterID.
-	// The "Mixnet" approach would shuffle them.
-	// For this CLI demo, maybe we just decrypt each vote (anonymity is not the primary goal here, verification is).
-	// OR we implement the vector approach.
-
-	// Given the current `EncryptVote` implementation:
-	// It encrypts the index.
-	// We must decrypt each vote individually.
-
-	// Let's change the strategy:
-	// `keys release` will generate partial decryptions for *EVERY* vote.
-	// `results` will combine them for *EVERY* vote and count.
-
-	// This is inefficient for large N but fine for a demo.
-
-	// Let's refactor releaseKeys to loop over all votes.
-
+	// Combine Partials to get the result
 	fmt.Println("Decrypting aggregated tallies...")
 
 	results := make(map[string]int)
@@ -278,8 +280,10 @@ func handleResultsCommand(args []string) {
 	}
 
 	// We also need the aggregated ciphertexts to combine; recompute aggregation to get ciphertexts
-	var votes []VoteData
-	_ = loadJSON(VotesFile, &votes)
+	var rawVotes []VoteData
+	_ = loadJSON(VotesFile, &rawVotes)
+	votes := consolidateVotes(rawVotes)
+
 	curve = elliptic.P256()
 	aggregated := make([]*crypto.ElGamalCiphertext, numCandidates)
 	for _, vote := range votes {

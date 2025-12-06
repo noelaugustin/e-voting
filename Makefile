@@ -12,7 +12,7 @@ NC     := \033[0m
 # Binary names
 BIN_DIR := bin
 SERVER_BIN := $(BIN_DIR)/evoting-server
-CLI_BIN := $(BIN_DIR)/evoting-verify
+CLI_BIN := $(BIN_DIR)/evoting-cli
 EXAMPLE_BIN := $(BIN_DIR)/evoting-example
 
 help:
@@ -57,8 +57,9 @@ test-race:
 
 test-cli: cli
 	@echo "$(BLUE)Running CLI integration tests...$(NC)"
-	@go build -o cli ./cmd/cli
 	@python3 cli_test.py
+	@echo "$(BLUE)Running CLI integrity tests...$(NC)"
+	@python3 integrity_test.py
 
 test-coverage:
 	@echo "$(BLUE)Generating test coverage report...$(NC)"

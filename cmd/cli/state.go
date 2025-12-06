@@ -24,7 +24,11 @@ const (
 	VotesFile         = "votes.json"
 	ResultsFile       = "results.json"
 	BoothsFile        = "booths.json"
-	AuthorityKeysFile = "keys.json" // Private keys, strictly for demo
+	AuthorityKeysFile = "keys.json"            // Private keys, strictly for demo
+	MachineKeysFile   = "machine_keys.json"    // Machine private keys (demo: local secure storage)
+	BoothKeysFile     = "booth_keys.json"      // Booth private keys (demo: physical booth storage)
+	AdminKeysFile     = "admin_keys_demo.json" // Election admin private key (demo: offline root)
+	MachinesFile      = "machines.json"        // Public machine registry
 )
 
 type StateManager struct {
@@ -78,7 +82,8 @@ type ElectionData struct {
 	Name            string   `json:"name"`
 	K               int      `json:"k"`
 	N               int      `json:"n"`
-	MasterPublicKey string   `json:"masterPublicKey"`
+	MasterPublicKey string   `json:"masterPublicKey"` // Threshold Encryption Key
+	AdminPublicKey  string   `json:"adminPublicKey"`  // Admin Signing Key (Root of Trust)
 	Candidates      []string `json:"candidates"`
 	IsPublished     bool     `json:"isPublished"`
 }
@@ -95,6 +100,11 @@ type AuthorityKeyData struct {
 	PrivateKey string `json:"privateKey"`
 }
 
+type AdminKeyData struct {
+	PrivateKey string `json:"privateKey"`
+	PublicKey  string `json:"publicKey"`
+}
+
 type VoterData struct {
 	ID          string `json:"id"`
 	BoothID     string `json:"boothId"`
@@ -104,9 +114,46 @@ type VoterData struct {
 }
 
 type VoteData struct {
-	VoteID      string                      `json:"voteId"`
-	VoterID     string                      `json:"voterId"`
-	Ciphertexts []*crypto.ElGamalCiphertext `json:"ciphertexts"` // per-candidate vector
-	Proof       *crypto.OneHotValidityProof `json:"proof"`
-	Timestamp   string                      `json:"timestamp"`
+	VoteID           string                      `json:"voteId"`
+	VoterID          string                      `json:"voterId"`
+	MachineID        string                      `json:"machineId"`
+	Ciphertexts      []*crypto.ElGamalCiphertext `json:"ciphertexts"` // per-candidate vector
+	Proof            *crypto.OneHotValidityProof `json:"proof"`
+	Timestamp        string                      `json:"timestamp"`
+	PreviousHash     string                      `json:"previousHash"`     // Tamper evidence
+	Hash             string                      `json:"hash"`             // Current hash
+	MachineSignature string                      `json:"machineSignature"` // Machine authentication
+}
+
+type MachineKeyData struct {
+	ID         string `json:"id"`
+	PrivateKey string `json:"privateKey"`
+	PublicKey  string `json:"publicKey"`
+}
+
+type GlobalConfig struct {
+	ElectionID  string `json:"electionId"`
+	AdminPublic string `json:"adminPublic"` // Hex encoded
+}
+
+type BoothData struct {
+	ID             string   `json:"id"`
+	Location       string   `json:"location"`
+	PublicKey      string   `json:"publicKey"`      // New: Booth Identity
+	AdminSignature string   `json:"adminSignature"` // New: Verified by Election
+	Machines       []string `json:"machines"`       // List of Machine IDs
+}
+
+type BoothKeyData struct {
+	ID         string `json:"id"`
+	PrivateKey string `json:"privateKey"`
+	PublicKey  string `json:"publicKey"`
+}
+
+type MachineData struct {
+	ID             string `json:"id"`
+	BoothID        string `json:"boothId"`
+	IsActive       bool   `json:"isActive"`
+	PublicKey      string `json:"publicKey"`      // New: Machine Identity
+	BoothSignature string `json:"boothSignature"` // New: Verified by Booth
 }

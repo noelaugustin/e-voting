@@ -6,9 +6,10 @@ import shutil
 import json
 import time
 
-CLI_BIN = os.path.abspath("./cli")
 
 class TestEvotingCLI(unittest.TestCase):
+    CLI_BIN = "./bin/evoting-cli"
+    DATA_DIR = "test_data_cli"
     def setUp(self):
         # Create unique data directory for each test
         self.test_name = self._testMethodName
@@ -22,12 +23,11 @@ class TestEvotingCLI(unittest.TestCase):
         self.env["EVOTING_DATA_DIR"] = self.data_dir
 
     def tearDown(self):
-        # Cleanup
-        if os.path.exists(self.data_dir):
-            shutil.rmtree(self.data_dir)
+        # Result data preserved for inspection
+        pass
 
     def run_cli(self, args, input_str=None, expect_error=False):
-        cmd = [CLI_BIN] + args
+        cmd = [self.CLI_BIN] + args
         try:
             result = subprocess.run(
                 cmd,
@@ -64,6 +64,7 @@ class TestEvotingCLI(unittest.TestCase):
         """Test the basic election flow with one voter"""
         print(f"\nrunning test_basic_flow in {self.data_dir}...")
         self.run_cli(["election", "create", "--name", "Basic", "--candidates", "Alice,Bob", "--n", "3", "--k", "2"])
+        self.run_cli(["booth", "create", "--id", "b1", "--location", "Loc1"])
         self.run_cli(["voter", "add", "--id", "v1", "--booth", "b1"])
         self.run_cli(["vote", "cast", "--voter", "v1", "--candidate", "Alice"])
         self.run_cli(["keys", "release"])
@@ -76,6 +77,7 @@ class TestEvotingCLI(unittest.TestCase):
         """Test with multiple voters choosing different candidates"""
         print(f"\nrunning test_multiple_voters in {self.data_dir}...")
         self.run_cli(["election", "create", "--name", "Multi", "--candidates", "Alice,Bob,Charlie", "--n", "3", "--k", "2"])
+        self.run_cli(["booth", "create", "--id", "b1", "--location", "Loc1"])
         
         voters = ["v1", "v2", "v3", "v4", "v5"]
         for v in voters:
@@ -104,6 +106,7 @@ class TestEvotingCLI(unittest.TestCase):
         """Test that if a voter votes twice, only the last vote counts"""
         print(f"\nrunning test_last_vote_counts in {self.data_dir}...")
         self.run_cli(["election", "create", "--name", "Revote", "--candidates", "Yes,No", "--n", "3", "--k", "2"])
+        self.run_cli(["booth", "create", "--id", "b1", "--location", "Loc1"])
         self.run_cli(["voter", "add", "--id", "v1", "--booth", "b1"])
         
         # First vote for Yes
@@ -127,6 +130,7 @@ class TestEvotingCLI(unittest.TestCase):
         candidates_str = ",".join(candidates_list)
         
         self.run_cli(["election", "create", "--name", "Scale", "--candidates", candidates_str, "--n", "5", "--k", "3"])
+        self.run_cli(["booth", "create", "--id", "b1", "--location", "Loc1"])
         
         # 30 Voters
         num_voters = 30

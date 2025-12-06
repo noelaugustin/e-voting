@@ -10,6 +10,7 @@ import (
 	"math/big"
 
 	"github.com/naugustin/e-voting/authority"
+	"github.com/naugustin/e-voting/crypto"
 )
 
 // cryptoPointBaseMult computes G*scalar on P-256
@@ -60,6 +61,26 @@ func createElection(args []string) {
 	sm := NewStateManager()
 	if err := sm.EnsureDataDir(); err != nil {
 		fmt.Printf("Error creating data dir: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Generate Admin Key Pair (Root of Trust)
+	fmt.Println("Generating Election Admin keys...")
+	adminKeyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		fmt.Printf("Error generating admin keys: %v\n", err)
+		os.Exit(1)
+	}
+	adminPrivStr := adminKeyPair.PrivateKey.D.String()
+	adminPubStr := fmt.Sprintf("%064x%064x", adminKeyPair.PublicKey.X, adminKeyPair.PublicKey.Y)
+
+	// Save Admin Private Key
+	adminKeyData := AdminKeyData{
+		PrivateKey: adminPrivStr,
+		PublicKey:  adminPubStr,
+	}
+	if err := saveJSON(AdminKeysFile, adminKeyData); err != nil {
+		fmt.Printf("Error saving admin keys: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -122,6 +143,7 @@ func createElection(args []string) {
 		Candidates:      strings.Split(*candidates, ","),
 		IsPublished:     false,
 		MasterPublicKey: masterPubKey,
+		AdminPublicKey:  adminPubStr,
 	}
 
 	if err := saveJSON(ElectionFile, election); err != nil {
@@ -131,6 +153,7 @@ func createElection(args []string) {
 
 	fmt.Printf("Election '%s' created with %d candidates and %d authorities.\n", election.Name, len(election.Candidates), election.N)
 	fmt.Printf("Master Public Key: %s...\n", masterPubKey[:20])
+	fmt.Printf("Admin Public Key: %s...\n", adminPubStr[:20])
 }
 
 func resetElectionCLI() {
