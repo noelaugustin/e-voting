@@ -57,13 +57,19 @@ func addVoter(args []string) {
 		os.Exit(1)
 	}
 
+	pubStr := fmt.Sprintf("%064x%064x", keyPair.PublicKey.X, keyPair.PublicKey.Y)
+	privStr := keyPair.PrivateKey.D.String()
+
 	voter := VoterData{
-		ID:          *id,
-		BoothID:     *booth,
-		PublicKey:   fmt.Sprintf("%x%x", keyPair.PublicKey.X, keyPair.PublicKey.Y),
-		PrivateKey:  keyPair.PrivateKey.D.String(), // Save private key for demo
-		VotingToken: "demo-token-" + *id,           // Simplified token
+		ID:        *id,
+		BoothID:   *booth,
+		HasVoted:  false,
+		PublicKey: pubStr,
 	}
+
+	// Save Private Key separately (simulate user device storage)
+	// For demo CLI convenience, we append to a file
+	saveVoterKey(*id, privStr)
 
 	voters = append(voters, voter)
 
@@ -77,4 +83,18 @@ func addVoter(args []string) {
 
 func freezeVoters() {
 	fmt.Println("Freezing voter list... (Not implemented in demo)")
+}
+
+type VoterKeyData struct {
+	ID         string `json:"id"`
+	PrivateKey string `json:"privateKey"`
+}
+
+var VoterKeysFile = "voter_keys.json"
+
+func saveVoterKey(id, privateKey string) {
+	var keys []VoterKeyData
+	loadJSON(VoterKeysFile, &keys) // ignore error
+	keys = append(keys, VoterKeyData{ID: id, PrivateKey: privateKey})
+	saveJSON(VoterKeysFile, keys)
 }

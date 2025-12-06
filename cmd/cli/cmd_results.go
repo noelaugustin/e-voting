@@ -13,38 +13,32 @@ import (
 
 // consolidateVotes filters votes to ensure only the last vote per voter counts
 func consolidateVotes(votes []VoteData) []VoteData {
-	latestVotes := make(map[string]VoteData)
-
+	// Consolidate votes: Last vote counts per voter (identified by VoterHash)
+	votesByVoter := make(map[string]VoteData)
 	for _, v := range votes {
-		existing, ok := latestVotes[v.VoterID]
-		if !ok {
-			latestVotes[v.VoterID] = v
-			continue
-		}
-
-		// Compar timestamps
-		// Fallback to naive string comparison if parsing fails (for demo simplicity/legacy support)
-		tNew, err1 := time.Parse(time.RFC3339, v.Timestamp)
-		tOld, err2 := time.Parse(time.RFC3339, existing.Timestamp)
-
-		if err1 == nil && err2 == nil {
-			if !tNew.Before(tOld) {
-				latestVotes[v.VoterID] = v
-			}
+		existing, exists := votesByVoter[v.VoterHash]
+		if !exists {
+			votesByVoter[v.VoterHash] = v
 		} else {
-			// Fallback: assume order in file implies order? Or just string compare
-			// If we appended, the later one is likely newer.
-			// But let's trust the one later in the list if timestamps are broken
-			latestVotes[v.VoterID] = v
+			// Compare Timestamps
+			tNew, _ := time.Parse(time.RFC3339Nano, v.Timestamp)
+			tOld, _ := time.Parse(time.RFC3339Nano, existing.Timestamp)
+			if tNew.After(tOld) {
+				votesByVoter[v.VoterHash] = v
+			} else if tNew.Equal(tOld) {
+				// Fallback: If timestamps identical, use index (implicitly, the one appearing later in log)
+				// Since we are iterating log in order, 'v' is later.
+				votesByVoter[v.VoterHash] = v
+			}
 		}
 	}
 
 	// Convert map back to slice
-	var consolidated []VoteData
-	for _, v := range latestVotes {
-		consolidated = append(consolidated, v)
+	var uniqueVotes []VoteData
+	for _, v := range votesByVoter {
+		uniqueVotes = append(uniqueVotes, v)
 	}
-	return consolidated
+	return uniqueVotes
 }
 
 func handleKeysCommand(args []string) {

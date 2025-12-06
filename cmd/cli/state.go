@@ -106,23 +106,25 @@ type AdminKeyData struct {
 }
 
 type VoterData struct {
-	ID          string `json:"id"`
-	BoothID     string `json:"boothId"`
-	PublicKey   string `json:"publicKey"`
-	PrivateKey  string `json:"privateKey"` // Demo only
-	VotingToken string `json:"votingToken"`
+	ID        string `json:"id"`
+	BoothID   string `json:"boothId"`
+	HasVoted  bool   `json:"hasVoted"`
+	PublicKey string `json:"publicKey"` // Voter's Public Key for Authentication
 }
 
 type VoteData struct {
-	VoteID           string                      `json:"voteId"`
-	VoterID          string                      `json:"voterId"`
-	MachineID        string                      `json:"machineId"`
-	Ciphertexts      []*crypto.ElGamalCiphertext `json:"ciphertexts"` // per-candidate vector
-	Proof            *crypto.OneHotValidityProof `json:"proof"`
-	Timestamp        string                      `json:"timestamp"`
-	PreviousHash     string                      `json:"previousHash"`     // Tamper evidence
-	Hash             string                      `json:"hash"`             // Current hash
-	MachineSignature string                      `json:"machineSignature"` // Machine authentication
+	VoteID      string                      `json:"voteId"`
+	VoterHash   string                      `json:"voterHash"` // Anonymized Voter Identity (SHA256)
+	MachineID   string                      `json:"machineId"`
+	BoothID     string                      `json:"boothId"`     // Explicit Booth Location
+	Ciphertexts []*crypto.ElGamalCiphertext `json:"ciphertexts"` // per-candidate vector
+	Proof       *crypto.OneHotValidityProof `json:"proof"`
+	Timestamp   string                      `json:"timestamp"`
+	// ...
+	PreviousHash     string `json:"previousHash"`     // Tamper evidence
+	Hash             string `json:"hash"`             // Current hash
+	MachineSignature string `json:"machineSignature"` // Machine authentication
+	VoterSignature   string `json:"voterSignature"`   // Voter authentication (New)
 }
 
 type MachineKeyData struct {

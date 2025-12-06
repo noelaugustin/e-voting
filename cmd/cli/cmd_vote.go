@@ -183,11 +183,39 @@ func castVote(args []string) {
 	var votes []VoteData
 	loadJSON(VotesFile, &votes) // Ignore error on first run
 
+	// Determine Booth from Machine
+	var boothID string
+	if *machineID != "" {
+		var machines []MachineData
+		if err := loadJSON(MachinesFile, &machines); err == nil {
+			for _, m := range machines {
+				if m.ID == *machineID {
+					boothID = m.BoothID
+					break
+				}
+			}
+		}
+		if boothID == "" {
+			fmt.Printf("Warning: Could not determine Booth for machine '%s'\n", *machineID)
+		}
+	}
+
+	// Anonymize Voter: Hash(VoterID)
+	// In a real system, we'd use a salt or ZK-Nullifier. Here simple SHA256.
+	voterHashBytes := sha256.Sum256([]byte(*voterID))
+	voterHash := hex.EncodeToString(voterHashBytes[:])
+
 	// Create new vote
+	// VoteID should effectively be random/unique.
+	// We use Hash(VoterID + Timestamp) to be unique but anonymous.
+	voteIDRaw := sha256.Sum256([]byte(*voterID + time.Now().String()))
+	voteID := fmt.Sprintf("vote-%x", voteIDRaw[:8])
+
 	vote := VoteData{
-		VoteID:       fmt.Sprintf("vote-%s-%d", *voterID, len(votes)+1),
-		VoterID:      *voterID,
+		VoteID:       voteID,
+		VoterHash:    voterHash,
 		MachineID:    *machineID,
+		BoothID:      boothID,
 		Ciphertexts:  ciphertexts,
 		Proof:        proof,
 		Timestamp:    time.Now().Format(time.RFC3339Nano),
@@ -201,26 +229,71 @@ func castVote(args []string) {
 
 	// Sign with Machine Key
 	if machinePrivKey != nil {
-		// Sign (VoteID + VoterID + Timestamp + PrevHash)
-		msg := vote.VoteID + vote.VoterID + vote.Timestamp + vote.PreviousHash
+		// Sign (VoteID + VoterHash + MachineID + BoothID + Timestamp + PrevHash)
+		// Including BoothID binds the vote to the location as well.
+		msg := vote.VoteID + vote.VoterHash + vote.MachineID + vote.BoothID + vote.Timestamp + vote.PreviousHash
 		r, s, err := crypto.SignData(machinePrivKey, []byte(msg))
 		if err == nil {
 			vote.MachineSignature = fmt.Sprintf("%x,%x", r, s)
 		} else {
-			fmt.Printf("Warning: Failed to sign vote: %v\n", err)
+			fmt.Printf("Warning: Failed to sign vote with machine key: %v\n", err)
 		}
 	}
 
+	// Sign with Voter Key (Authentication)
+	// 1. Load Voter Key
+	var voterKey *ecdsa.PrivateKey
+	// Need to check invalid assumption: structs in other files might not be exported or file precedence.
+	// Since main package, should be fine if types are same. But VoterKeyData was defined in cmd_voter.go
+	// Better to redefine locally or move to state.go structure.
+	// For now, I'll rely on JSON structure.
+	type VKey struct {
+		ID         string `json:"id"`
+		PrivateKey string `json:"privateKey"`
+	}
+	var vKeys []VKey
+	if err := loadJSON("voter_keys.json", &vKeys); err == nil {
+		for _, vk := range vKeys {
+			if vk.ID == *voterID {
+				d := new(big.Int)
+				d.SetString(vk.PrivateKey, 10)
+				voterKey = &ecdsa.PrivateKey{
+					PublicKey: ecdsa.PublicKey{Curve: elliptic.P256()},
+					D:         d,
+				}
+				// Reconstruct Public Key
+				voterKey.PublicKey.X, voterKey.PublicKey.Y = elliptic.P256().ScalarBaseMult(d.Bytes())
+				break
+			}
+		}
+	}
+
+	if voterKey != nil {
+		// Sign same message as machine + MachineSig (binding machine auth to user)
+		msg := vote.VoteID + vote.VoterHash + vote.MachineID + vote.BoothID + vote.Timestamp + vote.PreviousHash + vote.MachineSignature
+		r, s, err := crypto.SignData(voterKey, []byte(msg))
+		if err == nil {
+			vote.VoterSignature = fmt.Sprintf("%x,%x", r, s)
+		} else {
+			fmt.Printf("Warning: Failed to sign vote with voter key: %v\n", err)
+		}
+	} else {
+		fmt.Printf("Warning: Voter private key not found via CLI simulation. Unauthenticated vote.\n")
+	}
+
 	// Compute Current Hash
-	// Hash(PreviousHash + VoteID + VoterID + EncryptedData)
+	// Hash(PreviousHash + VoteID + VoterHash + MachineID + BoothID + EncryptedData + MachineSig + VoterSig)
 	h := sha256.New()
 	h.Write([]byte(vote.PreviousHash))
 	h.Write([]byte(vote.VoteID))
-	h.Write([]byte(vote.VoterID))
+	h.Write([]byte(vote.VoterHash))
+	h.Write([]byte(vote.MachineID))
+	h.Write([]byte(vote.BoothID))
 	// Add encrypted data to hash
 	cipherBytes, _ := json.Marshal(vote.Ciphertexts)
 	h.Write(cipherBytes)
 	h.Write([]byte(vote.MachineSignature))
+	h.Write([]byte(vote.VoterSignature))
 	vote.Hash = hex.EncodeToString(h.Sum(nil))
 
 	// Append to log (do not replace previous votes yet, consolidation happens at counting)
@@ -231,9 +304,9 @@ func castVote(args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Vote cast for %s by %s (Encrypted & Saved).\n", *candidate, *voterID)
+	fmt.Printf("Vote cast for %s (Anonymized Alias: %s...)\n", *candidate, voterHash[:8])
 	if *machineID != "" {
-		fmt.Printf("Recorded via Machine: %s\n", *machineID)
+		fmt.Printf("Recorded via Machine: %s (Booth: %s)\n", *machineID, boothID)
 		if vote.MachineSignature != "" {
 			fmt.Println("Vote cryptographically signed by machine.")
 		}
@@ -327,14 +400,17 @@ func verifyVote(args []string) {
 				integrityValid = false
 			}
 
-			// B. Recompute current hash
+			// Recompute hash
 			h := sha256.New()
 			h.Write([]byte(v.PreviousHash))
 			h.Write([]byte(v.VoteID))
-			h.Write([]byte(v.VoterID))
+			h.Write([]byte(v.VoterHash))
+			h.Write([]byte(v.MachineID))
+			h.Write([]byte(v.BoothID))
 			cipherBytes, _ := json.Marshal(v.Ciphertexts)
 			h.Write(cipherBytes)
 			h.Write([]byte(v.MachineSignature))
+			h.Write([]byte(v.VoterSignature)) // Include VoterSig in hash
 			computedHash := hex.EncodeToString(h.Sum(nil))
 
 			if computedHash != v.Hash {
@@ -342,8 +418,49 @@ func verifyVote(args []string) {
 				integrityValid = false
 			}
 
+			// D. Voter Authentication
+			// Verify that the vote was signed by the claimed voter (via VoterHash lookup)
+			// 1. Find the voter public key matching the hash
+			// In efficient system, this would be a map lookup. Here linear scan.
+			// Currently we only have VoterID in `voters.json`, need to hash to match `VoterHash`
+			var voterPubKeyStr string
+			var voters []VoterData
+			loadJSON(VotersFile, &voters) // ignore error
+
+			foundVoter := false
+			for _, registeredVoter := range voters {
+				vhBytes := sha256.Sum256([]byte(registeredVoter.ID))
+				vh := hex.EncodeToString(vhBytes[:])
+				if vh == v.VoterHash {
+					voterPubKeyStr = registeredVoter.PublicKey
+					foundVoter = true
+					break
+				}
+			}
+
+			if !foundVoter {
+				fmt.Printf("FAIL: Voter Authentication failed. No registered voter matches hash %s\n", v.VoterHash)
+				integrityValid = false
+			} else {
+				if v.VoterSignature == "" {
+					fmt.Printf("FAIL: Vote %s missing Voter Signature\n", v.VoteID)
+					integrityValid = false
+				} else {
+					vPubKey := parsePubKey(voterPubKeyStr)
+					r, s := parseSig(v.VoterSignature)
+					// Msg must match what was signed:
+					// VoteID + VoterHash + MachineID + BoothID + Timestamp + PrevHash + MachineSignature
+					msg := v.VoteID + v.VoterHash + v.MachineID + v.BoothID + v.Timestamp + v.PreviousHash + v.MachineSignature
+					if vPubKey == nil || r == nil || !crypto.VerifySignature(vPubKey, []byte(msg), r, s) {
+						fmt.Printf("FAIL: Vote %s has invalid Voter Signature (Identity Spoofing?)\n", v.VoteID)
+						integrityValid = false
+					}
+				}
+			}
+
 			// C. Certificate Chain Validation (Machine Authentication)
 			if v.MachineID != "" && adminPubKey != nil {
+				// ... (rest is same)
 				// 1. Find Machine
 				var machine *MachineData
 				for _, m := range machines {
@@ -356,6 +473,12 @@ func verifyVote(args []string) {
 					fmt.Printf("FAIL: Unregistered Machine ID %s for vote %s\n", v.MachineID, v.VoteID)
 					integrityValid = false
 					continue
+				}
+
+				// Check BoothID matches
+				if v.BoothID != machine.BoothID {
+					fmt.Printf("FAIL: Vote BoothID %s does not match Machine's registered BoothID %s\n", v.BoothID, machine.BoothID)
+					integrityValid = false
 				}
 
 				// 2. Find Booth
@@ -392,7 +515,7 @@ func verifyVote(args []string) {
 
 				// Verify Vote Signature (Signed by Machine)
 				r, s = parseSig(v.MachineSignature)
-				msg := v.VoteID + v.VoterID + v.Timestamp + v.PreviousHash
+				msg := v.VoteID + v.VoterHash + v.MachineID + v.BoothID + v.Timestamp + v.PreviousHash
 				if r == nil || !crypto.VerifySignature(machinePubKey, []byte(msg), r, s) {
 					fmt.Printf("FAIL: Vote %s has invalid signature from Machine %s\n", v.VoteID, machine.ID)
 					integrityValid = false
