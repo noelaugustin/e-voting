@@ -208,47 +208,57 @@ graph LR
 ## Feature Details
 - Eligibility Proofs: Each vote includes a composite one‑hot validity proof that the per‑candidate vector encrypts exactly one 1 and all other 0s (demo placeholder built atop disjunctive proofs). See `crypto/zkp.go`, invoked from `cmd/cli/cmd_vote.go` and verified via `vote verify`.
 
-- Double Voting Handling: The demo uses a pragmatic rule — “last vote counts.” When `castVote` saves a new vote, it removes prior votes with the same `voterId`. See `cmd/cli/cmd_vote.go`.
+- Double Voting Handling: The system uses an **Append-Only Log** backed by a Merkle Tree. All votes are preserved for audit. Tallying logic (`cmd_results.go`) filters out superseded votes based on `VoterHash` and Timestamp, counting only the latest vote per voter.
+
+- **Infrastructure Identity**:
+    - **Election Admin**: Root of trust. Signs Booth identities.
+    - **Booths**: Physical locations. Sign Machine identities.
+    - **Machines**: Voting terminals. Sign every vote with an ECDSA key.
+    - This creates a Chain of Trust: Election -> Booth -> Machine -> Vote.
+
+- **Voter Authentication & Anonymity**:
+    - **Authentication**: Voters sign their vote with a private key (generated during registration). The system verifies this signature to prevent impersonation.
+    - **Anonymity**: Voter identities are hashed (`SHA256`) in the public vote record. The link between real identity and vote is pseudonymous.
 
 - Threshold Encryption: Votes are encrypted under a master ElGamal public key derived from `n` authorities; any `k` shares can decrypt via partial decryptions combined later. See `authority/registry.go`, `crypto/threshold.go`, and CLI glue in `cmd/cli/cmd_election.go`, `cmd/cli/cmd_results.go`.
 
-- Partial Decryptions: `keys release` computes partial decryptions for each vote using the stored private shares (demo). In production, authorities would publish signed partials with verifiable points; the demo skips signature/point verification. See `cmd/cli/cmd_results.go:releaseKeys`.
- - Partial Decryptions: `keys release` computes partial decryptions for each aggregated candidate ciphertext and verifies them against authority verification points before saving. See `cmd/cli/cmd_results.go:releaseKeys` and `crypto/threshold.go:VerifyPartialDecryption`.
+- Partial Decryptions: `keys release` computes partial decryptions for each aggregated candidate ciphertext and verifies them against authority verification points before saving. See `cmd/cli/cmd_results.go:releaseKeys` and `crypto/threshold.go:VerifyPartialDecryption`.
 
-- Tallying Approach: Votes are encoded as a per‑candidate vector of ciphertexts (chosen candidate = 1, others = 0). Ciphertexts are homomorphically added component‑wise, and the aggregated ciphertexts are threshold‑decrypted to yield counts. See `crypto/ecc.go:AddCiphertexts`, `cmd/cli/cmd_vote.go`, `cmd/cli/cmd_results.go`.
+- Tallying Approach: Votes are encoded as a per‑candidate vector of ciphertexts (chosen candidate = 1, others = 0). Ciphertexts are homomorphically added component‑wise, and the aggregated ciphertexts are threshold‑decrypted to yield counts.
 
-- Storage & State: All entities persist as JSON in `data/`: `election.json`, `authorities.json`, `keys.json` (demo), `voters.json`, `votes.json`, `partials.json`. Helpers in `cmd/cli/state.go`.
+- Storage & State: All entities persist as JSON in `data/`: `election.json`, `authorities.json`, `keys.json`, `voters.json`, `votes.json`, `partials.json`, `machines.json`, `booth_keys.json`, `machine_keys.json`, `voter_keys.json`.
 
 ## End‑to‑End Demo Script
 ```zsh
 # 0) Build
 go build -o bin/evoting-cli ./cmd/cli
 
-# 1) Create election with 3 authorities, threshold 2
+# 1) Create election
 ./bin/evoting-cli election create --name "Demo" --candidates Alice,Bob,Charlie --n 3 --k 2
 
-# 2) Add voters
+# 2) Setup Infrastructure (Booth & Machine)
+./bin/evoting-cli booth create --id "B1" --location "Library"
+./bin/evoting-cli booth add-machine --booth "B1" --id "M1"
+
+# 3) Register Voters (Generates keys)
 ./bin/evoting-cli voter add --id V1 --booth B1
 ./bin/evoting-cli voter add --id V2 --booth B1
 
-# 3) Cast votes
-./bin/evoting-cli vote cast --voter V1 --candidate Alice
-./bin/evoting-cli vote cast --voter V2 --candidate Bob
+# 4) Cast Votes (Authenticated & Anonymized)
+./bin/evoting-cli vote cast --voter V1 --candidate Alice --machine M1
+./bin/evoting-cli vote cast --voter V2 --candidate Bob --machine M1
 
-# 3b) Verify vote proofs (one‑hot)
-./bin/evoting-cli vote verify
+# 5) Verify Integrity (Signatures + Merkle Tree)
+./bin/evoting-cli vote verify --tamper=true
 
-# 4) Release keys (generate partial decryptions)
+# 6) Release Keys & Tally
 ./bin/evoting-cli keys release
-
-# 5) Compute results
 ./bin/evoting-cli results
 ```
 
 ## Notes for Experts
 - Curve and ElGamal setup: P‑256, with ciphertexts and points stored via JSON; master public key serialized as concatenated hex `X||Y` in `election.json` (64+64 hex chars).
-- Security caveats: This demo keeps private authority shares and voter private keys in JSON; it skips verification of partials (no verification points). Publishing and mixnet steps are stubbed.
- - Security notes: The demo now stores verification points per authority and verifies partial decryptions before combining. Publishing/mix/shuffle remain stubbed.
+- Security notes: The demo now includes a full **PKI Chain** (Election->Booth->Machine->Vote) and **Hierarchical Merkle Audit** (Machine->Booth->Election).
 - Extensibility: For homomorphic tallying without per‑vote decryption, use vector or exponential ElGamal encoding and either per‑candidate ciphertext or compressed encodings with range proofs; add verification points and signatures to validate authority partials.
 
 ## Troubleshooting
