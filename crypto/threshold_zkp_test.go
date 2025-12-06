@@ -84,13 +84,13 @@ func TestCheatingAuthorityDetection(t *testing.T) {
 
 		if i == cheatingAuthorityIndex {
 			if isValid {
-				t.Errorf("❌ SECURITY FAILURE: Cheating authority %d was NOT detected!", i+1)
+				t.Errorf("FAIL: Cheating authority %d was NOT detected!", i+1)
 			} else {
-				t.Logf("✅ SUCCESS: Cheating authority %d was correctly identified", i+1)
+				t.Logf("SUCCESS: Cheating authority %d correctly identified", i+1)
 			}
 		} else {
 			if !isValid {
-				t.Errorf("❌ FALSE POSITIVE: Honest authority %d was incorrectly flagged as cheating", i+1)
+				t.Errorf("FALSE POSITIVE: Honest authority %d incorrectly flagged", i+1)
 			}
 		}
 	}
@@ -126,20 +126,20 @@ func TestForgedProofDetection(t *testing.T) {
 	partial.Proof.Response = big.NewInt(12345)
 
 	if VerifyPartialDecryption(partial, ciphertext, publicInfo) {
-		t.Error("❌ SECURITY FAILURE: Forged proof with modified response was accepted!")
+		t.Error("FAIL: Forged proof with modified response was accepted!")
 	} else {
-		t.Log("✅ SUCCESS: Forged proof with modified response was rejected")
+		t.Log("OK: Forged proof with modified response rejected")
 	}
 
-	// Restore and test 2: Modify the challenge (forged proof)
+	// Restore and test 2: Modify the challenge
 	partial.Proof.Response = originalResponse
 	originalChallenge := partial.Proof.Challenge
 	partial.Proof.Challenge = big.NewInt(67890)
 
 	if VerifyPartialDecryption(partial, ciphertext, publicInfo) {
-		t.Error("❌ SECURITY FAILURE: Forged proof with modified challenge was accepted!")
+		t.Error("FAIL: Forged proof with modified challenge was accepted!")
 	} else {
-		t.Log("✅ SUCCESS: Forged proof with modified challenge was rejected")
+		t.Log("OK: Forged proof with modified challenge rejected")
 	}
 
 	// Restore and verify it's valid again
@@ -187,9 +187,9 @@ func TestMultipleCheatingAuthorities(t *testing.T) {
 		// Verify and filter
 		if VerifyPartialDecryption(partial, ciphertext, publicInfo) {
 			validPartials = append(validPartials, partial)
-			t.Logf("✅ Authority %d: ACCEPTED (honest)", i+1)
+			t.Logf("Authority %d: accepted (honest)", i+1)
 		} else {
-			t.Logf("❌ Authority %d: REJECTED (cheating detected)", i+1)
+			t.Logf("Authority %d: rejected (cheating detected)", i+1)
 		}
 	}
 
@@ -206,9 +206,9 @@ func TestMultipleCheatingAuthorities(t *testing.T) {
 			t.Errorf("Failed to decrypt with honest authorities: %v", err)
 		}
 		if result != voteChoice {
-			t.Errorf("Decryption with honest authorities gave wrong result: expected %d, got %d", voteChoice, result)
+			t.Errorf("Decryption gave wrong result: expected %d, got %d", voteChoice, result)
 		} else {
-			t.Logf("✅ SUCCESS: System correctly decrypted using %d honest authorities (threshold=%d)", len(validPartials), k)
+			t.Logf("System correctly decrypted using %d honest authorities (threshold=%d)", len(validPartials), k)
 		}
 	} else {
 		t.Error("Not enough honest authorities to decrypt (system failure)")

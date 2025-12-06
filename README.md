@@ -2,16 +2,16 @@
 
 A cryptographically secure electronic voting system featuring threshold cryptography, zero-knowledge proofs, and Merkle tree-based audit trails for verifiable, anonymous, and tamper-proof elections.
 
-## 🎯 Key Features
+## 🎯 Key **Features:**
 
-✅ **Threshold Cryptography** - Distributed trust requiring k-of-n authorities for vote decryption  
-✅ **Voter Privacy** - No single party can learn individual voter choices  
-✅ **Individual Verifiability** - Voters verify their votes using Merkle inclusion proofs  
-✅ **Universal Verifiability** - Anyone can audit the complete election  
-✅ **Offline Verification** - Download complete audit package with all cryptographic proofs  
-✅ **Zero-Knowledge Proofs** - Prove validity without revealing sensitive information  
-✅ **Tamper-Proof** - Merkle tree commitments detect any vote manipulation  
-✅ **Production Ready** - Web interface, REST API, and CLI audit tools  
+- Threshold Cryptography - Distributed trust requiring k-of-n authorities for vote decryption  
+- Voter Privacy - No single party can learn individual voter choices  
+- Individual Verifiability - Voters verify their votes using Merkle inclusion proofs  
+- Universal Verifiability - Anyone can audit the complete election  
+- Offline Verification - Download complete audit package with all cryptographic proofs  
+- Zero-Knowledge Proofs - Prove validity without revealing sensitive information  
+- Tamper-Proof - Merkle tree commitments detect any vote manipulation  
+- Production Ready - Web interface, REST API, and CLI audit tools  
 
 ## 📖 Documentation
 
@@ -23,7 +23,7 @@ A cryptographically secure electronic voting system featuring threshold cryptogr
 
 ## Quick Start
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Build
 
@@ -183,7 +183,7 @@ go test -bench=. ./...
 - **Zero-Knowledge**: Schnorr protocol (Fiat-Shamir)
 - **Language**: Go 1.21+ (stdlib only)
 
-## 📊 Performance
+## Performance
 
 - **Vote Casting**: ~2.3ms per vote
 - **Vote Verification**: ~0.15ms with Merkle proof

@@ -52,8 +52,8 @@ func main() {
 	fs := http.FileServer(http.Dir("./web"))
 	http.Handle("/", fs)
 
-	log.Println("🗳️  E-Voting Server starting on http://localhost:8080")
-	log.Println("📊 Web interface: http://localhost:8080")
-	log.Println("🔌 API endpoint: http://localhost:8080/api")
+	log.Println("E-Voting Server starting on http://localhost:8080")
+	log.Println("Web interface: http://localhost:8080")
+	log.Println("API endpoint: http://localhost:8080/api")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
