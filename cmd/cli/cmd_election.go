@@ -71,7 +71,7 @@ func createElection(args []string) {
 	var masterPubKey string
 
 	for i, auth := range activeAuths {
-		pubKeyStr := fmt.Sprintf("%x%x", auth.KeyShare.PublicKey.X, auth.KeyShare.PublicKey.Y)
+		pubKeyStr := fmt.Sprintf("%064x%064x", auth.KeyShare.PublicKey.X, auth.KeyShare.PublicKey.Y)
 		if i == 0 {
 			masterPubKey = pubKeyStr
 		}
