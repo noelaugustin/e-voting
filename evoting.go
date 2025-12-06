@@ -232,3 +232,8 @@ func (vs *VotingSystem) GetAllPublishedVotes() []*verification.PublishedVote {
 func (vs *VotingSystem) GetMerkleProof(voteID string) []string {
 	return vs.verificationSystem.GetMerkleProof(voteID)
 }
+
+// GetAllVoters returns all registered voters
+func (vs *VotingSystem) GetAllVoters() []*voter.Voter {
+	return vs.voterRegistry.GetAllVoters()
+}

@@ -193,6 +193,7 @@ func CombinePartialDecryptions(
 	// Brute force discrete log to recover vote choice
 	for i := 0; i <= maxChoice; i++ {
 		testX, testY := curve.ScalarBaseMult(big.NewInt(int64(i)).Bytes())
+		// fmt.Printf("DEBUG: Check i=%d, Test=(%s, %s)\n", i, testX, testY)
 		if testX.Cmp(msgX) == 0 && testY.Cmp(msgY) == 0 {
 			return i, nil
 		}

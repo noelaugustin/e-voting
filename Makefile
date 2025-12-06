@@ -39,47 +39,26 @@ help:
 	@echo "  make lint         - Run linter (requires golangci-lint)"
 	@echo ""
 
-all: server cli example
-	@echo "$(GREEN)✓ All binaries built successfully$(NC)"
-
-server:
-	@echo "$(BLUE)Building API server...$(NC)"
-	@mkdir -p $(BIN_DIR)
-	@go build -o $(SERVER_BIN) ./cmd/server/main.go
-	@echo "$(GREEN)✓ Build complete: $(SERVER_BIN)$(NC)"
+build: cli
 
 cli:
-	@echo "$(BLUE)Building CLI verification tool...$(NC)"
+	@echo "$(BLUE)Building CLI tool...$(NC)"
 	@mkdir -p $(BIN_DIR)
-	@go build -o $(CLI_BIN) ./verify/main.go
+	@go build -o $(CLI_BIN) ./cmd/cli
 	@echo "$(GREEN)✓ Build complete: $(CLI_BIN)$(NC)"
 
-example:
-	@echo "$(BLUE)Building example application...$(NC)"
-	@mkdir -p $(BIN_DIR)
-	@go build -o $(EXAMPLE_BIN) ./example/main.go
-	@echo "$(GREEN)✓ Build complete: $(EXAMPLE_BIN)$(NC)"
-
-build: example
-run: run-example
-
-run-server: server
-	@echo "$(BLUE)Starting API server...$(NC)"
-	@echo "$(YELLOW)Web interface: http://localhost:8080$(NC)"
-	@echo "$(YELLOW)API endpoint: http://localhost:8080/api$(NC)"
-	@$(SERVER_BIN)
-
-run-example: example
-	@echo "$(BLUE)Running example application...$(NC)"
-	@$(EXAMPLE_BIN)
-
 test:
-	@echo "$(BLUE)Running tests...$(NC)"
+	@echo "$(BLUE)Running library unit tests...$(NC)"
 	@go test ./... -v
 
 test-race:
 	@echo "$(BLUE)Running tests with race detection...$(NC)"
 	@go test ./... -v -race
+
+test-cli: cli
+	@echo "$(BLUE)Running CLI integration tests...$(NC)"
+	@go build -o cli ./cmd/cli
+	@python3 cli_test.py
 
 test-coverage:
 	@echo "$(BLUE)Generating test coverage report...$(NC)"
@@ -106,4 +85,7 @@ clean:
 	@rm -rf $(BIN_DIR)
 	@rm -f coverage.out coverage.html
 	@rm -f audit-package*.json
+	@rm -rf test_data_*
+	@rm -rf data
+	@rm -f cli
 	@echo "$(GREEN)✓ Clean complete$(NC)"

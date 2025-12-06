@@ -148,3 +148,15 @@ func (vr *VoterRegistry) GetTotalVoters() int {
 func (vr *VoterRegistry) GetAuthorityPublicKey() *ecdsa.PublicKey {
 	return vr.authorityKeyPair.PublicKey
 }
+
+// GetAllVoters returns all registered voters
+func (vr *VoterRegistry) GetAllVoters() []*Voter {
+	vr.mu.RLock()
+	defer vr.mu.RUnlock()
+
+	voters := make([]*Voter, 0, len(vr.voters))
+	for _, v := range vr.voters {
+		voters = append(voters, v)
+	}
+	return voters
+}

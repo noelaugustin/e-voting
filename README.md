@@ -1,269 +1,132 @@
 # Verifiable E-Voting System
 
-A cryptographically secure electronic voting system featuring threshold cryptography, zero-knowledge proofs, and Merkle tree-based audit trails for verifiable, anonymous, and tamper-proof elections.
+A cryptographically secure electronic voting system featuring threshold cryptography, zero-knowledge proofs, and audit trails for verifiable, anonymous, and tamper-proof elections.
 
-## 🎯 Key **Features:**
+> **Note**: This project focuses on the core cryptographic library and a CLI tool for election management.
+> Web interfaces and REST APIs have been removed to focus on the core protocol implementation.
 
-- Threshold Cryptography - Distributed trust requiring k-of-n authorities for vote decryption  
-- Voter Privacy - No single party can learn individual voter choices  
-- Individual Verifiability - Voters verify their votes using Merkle inclusion proofs  
-- Universal Verifiability - Anyone can audit the complete election  
-- Offline Verification - Download complete audit package with all cryptographic proofs  
-- Zero-Knowledge Proofs - Prove validity without revealing sensitive information  
-- Tamper-Proof - Merkle tree commitments detect any vote manipulation  
-- Production Ready - Web interface, REST API, and CLI audit tools  
+## 🎯 Key Features
+
+- **Threshold Cryptography**: Distributed trust requiring k-of-n authorities for vote decryption.
+- **Voter Privacy**: No single party can learn individual voter choices (ElGamal Encryption).
+- **Individual Verifiability**: Voters can verify their vote inclusion.
+- **Zero-Knowledge Proofs**: Prove validity without revealing sensitive information.
+- **Tamper-Proof**: Cryptographic commitments ensure integrity.
 
 ## 📖 Documentation
 
-📄 **[PAPER.md](./PAPER.md)** - Academic paper with complete system design, cryptographic protocols, security analysis, and performance evaluation
+- **[IMPLEMENTATION.md](./IMPLEMENTATION.md)**: Technical implementation details.
 
-📚 **[ELI5.md](./ELI5.md)** - Accessible explanation of features and cryptography for non-technical readers
-
-🔧 **[IMPLEMENTATION.md](./IMPLEMENTATION.md)** - Technical implementation guide with API reference and deployment instructions
-
-## Quick Start
-
-## Quick Start
+## Quick Start (CLI)
 
 ### Build
 
 ```bash
-# Build all components
-make all
-
-# Or build individually
-make server   # API server with web interface
-make cli      # CLI verification tool
-make example  # Demo application
+make build
 ```
 
-### Run Server
+This ensures the CLI tool is built at `bin/cli`.
 
-```bash
-# Start the server
-./bin/evoting-server
+### CLI Usage
 
-# Access web interface at http://localhost:8080
-```
+The CLI supports the full election lifecycle:
 
-### Run CLI Audit Tool
+1.  **Create Election**
+    ```bash
+    ./bin/cli election create --name "My Election" --candidates "Alice,Bob" --n 5 --k 3
+    ```
 
-```bash
-# Download audit package
-./bin/evoting-verify download
+2.  **Add Voters**
+    ```bash
+    ./bin/cli voter add --id "voter-1" --booth "booth-A"
+    ```
 
-# Verify your vote
-./bin/evoting-verify verify <voterID> <secret>
+3.  **Cast Votes**
+    ```bash
+    ./bin/cli vote cast --voter "voter-1" --candidate "Alice"
+    ```
 
-# Display audit package info
-./bin/evoting-verify info audit-package.json
-```
+4.  **Release Authority Keys** (Simulation of threshold decryption)
+    ```bash
+    ./bin/cli keys release
+    ```
 
-### Run Example
+5.  **Tally Results**
+    ```bash
+    ./bin/cli results
+    ```
+    *Output should show the counted votes.*
 
-```bash
-# Complete election demonstration
-./bin/evoting-example
-```
+## 💻 Core Library
 
-## 💻 System Components
+The core logic is designed to be used as a Go library:
 
-### 1. Web Interface (`web/`)
-- Complete election management dashboard
-- Voter registration and vote casting
-- Real-time election status
-- Audit package download and verification
+- **`evoting`**: Main system package.
+- **`crypto`**: Elliptic curve operations, threshold schemes, ZK proofs.
+- **`authority`**: Authority management and key generation.
+- **`vote`**: Vote management.
+- **`voter`**: Voter registry.
+- **`verification`**: Verification utilities.
 
-### 2. REST API (`api/`)
-- Election lifecycle management
-- Vote casting and verification
-- Threshold decryption coordination
-- Audit and verification endpoints
-
-### 3. CLI Tool (`verify/`)
-- Offline audit package verification
-- Vote verification with Merkle proofs
-- Election data inspection
-
-### 4. Core Library
-- **Voting System** (`evoting.go`) - Election management
-- **Threshold Crypto** (`crypto/threshold.go`) - Distributed decryption
-- **Zero-Knowledge Proofs** (`crypto/zkp.go`) - Validity proofs
-- **Merkle Trees** (`crypto/merkle.go`) - Audit trails
-- **Verification** (`verification/system.go`) - Bulletin board
-
-## 🔬 Example Usage
+### Example Library Usage
 
 ```go
-// Initialize system with threshold (k=3, n=5)
-system, _ := evoting.NewVotingSystem()
+import (
+    "fmt"
+    "github.com/naugustin/e-voting"
+)
 
-// Register candidates
-system.RegisterCandidate("Alice")
-system.RegisterCandidate("Bob")
+func main() {
+    // Initialize system with threshold (k=3, n=5)
+    system, _ := evoting.NewVotingSystem()
+    system.SetupThresholdAuthorities(3, 5)
 
-// Register voters
-secret1, _ := system.RegisterVoter("voter1", "booth-1")
-secret2, _ := system.RegisterVoter("voter2", "booth-2")
+    // Register candidates
+    system.RegisterCandidate("Alice")
+    system.RegisterCandidate("Bob")
 
-// Cast votes
-receipt1, _ := system.CastVote("voter1", secret1, "Alice")
-receipt2, _ := system.CastVote("voter2", secret2, "Bob")
+    // Register voter
+    voter, _ := system.RegisterVoter("voter1", "booth-1")
 
-// Publish votes to bulletin board
-system.PublishVotes()
-
-// Verify individual vote with Merkle proof
-result, _ := system.VerifyMyVote("voter1", receipt1.Secret)
-fmt.Printf("Vote verified! Candidate: %s\n", result.CandidateID)
-
-// Download audit package
-auditPkg := system.GetAuditPackage()
-fmt.Printf("Merkle root: %s\n", auditPkg.MerkleRoot)
-
-// Initiate threshold counting (requires k authorities)
-requestID, _ := system.InitiateCounting()
-
-// Authorities submit partial decryptions
-for i := 1; i <= k; i++ {
-    system.SubmitPartialDecryption(requestID, i)
+    // Cast vote
+    encryptedVote, _ := system.CastVote(voter, "Alice")
+    fmt.Printf("Vote cast! ID: %s\n", encryptedVote.VoteID)
 }
-
-// Get final results
-results, _ := system.CountVotes()
 ```
 
 ## 🧪 Testing
 
+This project emphasizes testing integrity:
+
 ```bash
-# Run all tests
-go test ./... -v
+# Run core library unit tests
+make test
 
-# Run with race detection
-go test ./... -race
-
-# Run specific tests
-go test ./crypto -v
-go test ./verification -v
-
-# Run benchmarks
-go test -bench=. ./...
+# Run CLI integration tests (Python)
+make test-cli
 ```
-
-## 🏗️ Architecture
-
-```
-┌─────────────┐
-│  Web UI     │
-└──────┬──────┘
-       │
-┌──────▼──────┐      ┌─────────────────┐
-│  REST API   │◄─────┤  CLI Tool       │
-└──────┬──────┘      └─────────────────┘
-       │
-┌──────▼──────────────────────────────┐
-│      Voting System Core              │
-│  ┌────────────┐  ┌────────────────┐ │
-│  │ Threshold  │  │  Zero-Knowledge│ │
-│  │   Crypto   │  │     Proofs     │ │
-│  └────────────┘  └────────────────┘ │
-│  ┌────────────┐  ┌────────────────┐ │
-│  │  Merkle    │  │  Verification  │ │
-│  │   Trees    │  │     System     │ │
-│  └────────────┘  └────────────────┘ │
-└───────────────────────────────────────┘
-```
-
-## 🔐 Technology Stack
-
-- **Elliptic Curve**: secp256k1 (128-bit security)
-- **Encryption**: ElGamal on elliptic curves
-- **Threshold Scheme**: Shamir's Secret Sharing
-- **Hash Function**: SHA-256
-- **Zero-Knowledge**: Schnorr protocol (Fiat-Shamir)
-- **Language**: Go 1.21+ (stdlib only)
-
-## Performance
-
-- **Vote Casting**: ~2.3ms per vote
-- **Vote Verification**: ~0.15ms with Merkle proof
-- **Threshold Decryption**: ~8.7ms (k=3)
-- **Scalability**: 10,000+ voters tested
-- **Proof Size**: O(log n) hashes
-
-See [PAPER.md](./PAPER.md) for detailed performance evaluation.
-
-## 🔒 Security Properties
-
-- **Vote Privacy**: Threshold assumption, DDH hardness
-- **Vote Integrity**: Merkle tree, collision resistance
-- **Individual Verifiability**: Merkle inclusion proofs
-- **Universal Verifiability**: Public bulletin board audit
-- **Tamper Detection**: Cryptographic commitments
-
-See [PAPER.md](./PAPER.md) for complete security analysis.
-
-## 📝 API Endpoints
-
-**Election Management**
-- `POST /api/election` - Create election
-- `GET /api/election/info` - Get status
-
-**Voting**
-- `POST /api/vote` - Cast vote
-- `POST /api/votes/publish` - Publish to bulletin board
-
-**Audit & Verification**
-- `GET /api/audit/package` - Download audit package
-- `POST /api/audit/verify-my-vote` - Verify with Merkle proof
-- `GET /api/audit/merkle-root` - Get Merkle root
-
-**Counting**
-- `POST /api/count/initiate` - Start threshold decryption
-- `POST /api/count/partial` - Submit partial decryption
-- `GET /api/count/status` - Get counting status
-
-See [IMPLEMENTATION.md](./IMPLEMENTATION.md) for complete API reference.
 
 ## 📦 Project Structure
 
 ```
 e-voting/
-├── evoting.go              # Core voting system
-├── evoting_test.go         # System tests
-├── crypto/                 # Cryptographic primitives
-│   ├── ecc.go             # Elliptic curve operations
-│   ├── threshold.go       # Threshold cryptography
-│   ├── zkp.go             # Zero-knowledge proofs
-│   └── merkle.go          # Merkle trees
-├── verification/           # Bulletin board & audit
-│   └── system.go
-├── api/                    # REST API
-│   ├── handlers_election.go
-│   ├── handlers_audit.go
-│   └── types.go
-├── cmd/server/            # HTTP server
-│   └── main.go
-├── verify/                # CLI audit tool
-│   └── main.go
-├── web/                   # Web interface
-│   ├── index.html
-│   ├── js/app.js
-│   └── css/style.css
-├── example/               # Demo application
-│   └── main.go
-├── PAPER.md              # Academic paper
-├── ELI5.md               # Accessible explanation
-└── IMPLEMENTATION.md     # Technical guide
+├── evoting.go              # Core voting system facade
+├── cmd/
+│   └── cli/                # CLI application source
+├── crypto/                 # Cryptographic primitives (ECC, Threshold, ZKP)
+├── authority/              # Authority management
+├── vote/                   # Vote logic
+├── voter/                  # Voter registry
+├── verification/           # Verification logic
+├── analytics/              # Analytics engine
+└── cli_test.py             # Integration test suite
 ```
 
-## 🤝 Contributing
+## 🔐 Security Properties
 
-Contributions welcome! Please ensure:
-- All tests pass (`go test ./...`)
-- Code is formatted (`go fmt ./...`)
-- Documentation is updated
-- Security considerations are addressed
+- **Vote Privacy**: Hardness of Discrete Logarithm (Elliptic Curve).
+- **Vote Integrity**: Votes cannot be modified once cast.
+- **Anonymity**: Separated by threshold keys.
 
 ## 📄 License
 
